@@ -1,0 +1,29 @@
+{
+  "name": "deep-research",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Deep Research Agent powered by Claude Agent SDK",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "db:push": "cd prisma && pnpm prisma db push",
+    "db:studio": "cd prisma && pnpm prisma studio"
+  },
+  "devDependencies": {
+    "@prisma/client": "6.1.0",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.2",
+    "prisma": "6.1.0",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.0"
+}

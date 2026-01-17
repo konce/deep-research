@@ -1,0 +1,93 @@
+// Prisma Schema for Deep Research Agent
+// Database: SQLite (for development/testing)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model ResearchSession {
+  id            String   @id @default(cuid())
+  query         String
+  status        String   // pending, running, completed, failed, cancelled
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  completedAt   DateTime?
+
+  // Agent session information
+  agentSessionId String?
+  modelUsed      String   @default("claude-sonnet-4-5")
+  totalCostUsd   Float?
+  tokensUsed     Int?
+
+  // Relations
+  sources       Source[]
+  report        Report?
+  messages      ResearchMessage[]
+
+  @@index([createdAt])
+  @@map("research_sessions")
+}
+
+model Source {
+  id                String          @id @default(cuid())
+  researchSessionId String
+  researchSession   ResearchSession @relation(fields: [researchSessionId], references: [id], onDelete: Cascade)
+
+  type              String   // web, document, api
+  url               String?
+  title             String?
+  snippet           String?
+  content           String?
+
+  createdAt         DateTime @default(now())
+
+  @@index([researchSessionId])
+  @@map("sources")
+}
+
+model Report {
+  id                String          @id @default(cuid())
+  researchSessionId String          @unique
+  researchSession   ResearchSession @relation(fields: [researchSessionId], references: [id], onDelete: Cascade)
+
+  title             String
+  content           String
+  format            String   @default("markdown")
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([createdAt])
+  @@map("reports")
+}
+
+model ResearchMessage {
+  id                String          @id @default(cuid())
+  researchSessionId String
+  researchSession   ResearchSession @relation(fields: [researchSessionId], references: [id], onDelete: Cascade)
+
+  type              String   // assistant, user, tool_use, tool_result, result
+  content           String   // JSON string for SQLite
+  timestamp         DateTime @default(now())
+
+  @@index([researchSessionId, timestamp])
+  @@map("research_messages")
+}
+
+model Document {
+  id            String   @id @default(cuid())
+  filename      String
+  originalName  String
+  mimeType      String
+  size          Int
+  path          String
+  extractedText String?
+  createdAt     DateTime @default(now())
+
+  @@map("documents")
+}
