@@ -313,3 +313,31 @@ curl http://localhost:5173
 - 🚀 快速恢复工作（Claude 能立即了解项目状态）
 - ⚡ 便捷命令（常用操作一键执行）
 - 📖 完整上下文（无需重复解释项目）
+
+---
+
+## 📦 GitHub 仓库（2026-01-17）
+
+**仓库地址**: https://github.com/konce/deep-research
+
+**已推送内容**:
+- ✅ Phase 1 完整代码 (57 文件, 8477+ 行)
+- ✅ 完整文档 (CLAUDE.md, IMPLEMENTATION_PLAN.md 等)
+- ✅ Skills 配置 (.claude/skills/)
+- ✅ 便捷脚本 (start.sh, check-status.sh)
+
+**安全确认**:
+- ✅ .env (API keys) 已忽略
+- ✅ node_modules 已忽略  
+- ✅ dev.db (数据库) 已忽略
+- ✅ 敏感信息未上传
+
+**Git 配置**:
+```bash
+git clone https://github.com/konce/deep-research.git
+# 或
+git clone git@github.com:konce/deep-research.git
+```
+
+**分支**: main
+**Remote**: origin (SSH)
