@@ -2,15 +2,17 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { AppError } from '../middleware/errorHandler';
 import { getAgentService } from '../services/agent/AgentService';
+import { getWorkflowManager, type DeepResearchOptions } from '../services/agent/workflows/DeepResearch';
 
 const router: Router = Router();
 const prisma = new PrismaClient();
 const agentService = getAgentService();
+const workflowManager = getWorkflowManager();
 
 // POST /api/research/start - Start a new research session
 router.post('/start', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { query, maxBudget, searchDepth, includeDocuments } = req.body;
+    const { query, maxBudget, searchDepth } = req.body;
 
     // Validation
     if (!query || typeof query !== 'string') {
@@ -35,30 +37,38 @@ router.post('/start', async (req: Request, res: Response, next: NextFunction) =>
 
     console.log(`[API] Created session: ${session.id}`);
 
+    // Prepare research options
+    const researchOptions: DeepResearchOptions = {
+      maxBudget,
+      searchDepth,
+      includeDocuments: req.body.documentIds, // Array of document IDs to analyze
+    };
+
+    // Create workflow
+    const workflow = workflowManager.createWorkflow(session.id);
+
     // Start research in background (non-blocking)
     const researchPromise = (async () => {
       try {
-        const generator = agentService.conductResearch(session.id, query, {
-          maxBudget,
-          searchDepth,
-          includeDocuments,
-        });
+        const generator = workflow.execute(session.id, query, researchOptions);
 
         // Consume the generator (without blocking the response)
-        for await (const update of generator) {
-          // Updates are being processed and saved by AgentService
-          console.log(`[API] Research update: ${update.type}`);
+        for await (const event of generator) {
+          console.log(`[API] Research progress: ${event.stage} (${event.progress}%)`);
         }
 
         console.log(`[API] Research completed: ${session.id}`);
+        workflowManager.removeWorkflow(session.id);
       } catch (error) {
         console.error(`[API] Research failed: ${session.id}`, error);
+        workflowManager.removeWorkflow(session.id);
       }
     })();
 
     // Don't await the research - it runs in background
     researchPromise.catch((err) => {
       console.error('[API] Unhandled research error:', err);
+      workflowManager.removeWorkflow(session.id);
     });
 
     // Return session info immediately
@@ -175,50 +185,95 @@ router.get('/:id/stream', async (req: Request, res: Response, next: NextFunction
       res.end();
     } else {
       // Research is still running or pending
-      // Phase 2: Just keep the connection alive with periodic updates
-      // Phase 3: Will implement real-time streaming via EventEmitter
+      // Use EventEmitter for real-time updates (Phase 5)
 
-      console.log(`[API] Research is ${session.status}, keeping connection alive`);
+      console.log(`[API] Research is ${session.status}, setting up real-time stream`);
 
-      const keepAlive = setInterval(() => {
-        res.write(`: keepalive\n\n`);
-      }, 15000);
+      // Get workflow if exists
+      const workflow = workflowManager.getWorkflow(id);
 
-      // Poll for status updates every 3 seconds
-      const statusPoll = setInterval(async () => {
-        try {
-          const updatedSession = await prisma.researchSession.findUnique({
-            where: { id },
-          });
-
-          if (updatedSession && updatedSession.status !== session.status) {
-            res.write(`data: ${JSON.stringify({
-              type: 'status',
-              timestamp: new Date().toISOString(),
-              data: {
-                message: `Research status: ${updatedSession.status}`,
-                status: updatedSession.status,
-              }
-            })}\n\n`);
-
-            // If research completed, end the stream
-            if (updatedSession.status === 'completed' || updatedSession.status === 'failed') {
-              clearInterval(keepAlive);
-              clearInterval(statusPoll);
-              res.end();
+      if (workflow) {
+        // Listen to workflow progress events
+        const progressHandler = (event: any) => {
+          res.write(`data: ${JSON.stringify({
+            type: 'progress',
+            timestamp: event.timestamp,
+            data: {
+              stage: event.stage,
+              progress: event.progress,
+              message: event.message,
             }
-          }
-        } catch (err) {
-          console.error('[API] Error polling status:', err);
-        }
-      }, 3000);
+          })}\n\n`);
+        };
 
-      req.on('close', () => {
-        console.log(`[API] Client disconnected from stream: ${id}`);
-        clearInterval(keepAlive);
-        clearInterval(statusPoll);
-        res.end();
-      });
+        const agentUpdateHandler = (update: any) => {
+          res.write(`data: ${JSON.stringify({
+            type: 'agent-update',
+            timestamp: new Date().toISOString(),
+            data: update.data,
+          })}\n\n`);
+        };
+
+        // Attach event listeners
+        workflow.on('progress', progressHandler);
+        workflow.on('agent-update', agentUpdateHandler);
+
+        // Cleanup on disconnect
+        req.on('close', () => {
+          console.log(`[API] Client disconnected from stream: ${id}`);
+          workflow.off('progress', progressHandler);
+          workflow.off('agent-update', agentUpdateHandler);
+        });
+
+        // Keep-alive ping
+        const keepAlive = setInterval(() => {
+          res.write(`: keepalive\n\n`);
+        }, 15000);
+
+        req.on('close', () => {
+          clearInterval(keepAlive);
+        });
+      } else {
+        // Workflow not found, fallback to polling
+        console.log(`[API] Workflow not found, using polling fallback`);
+
+        const keepAlive = setInterval(() => {
+          res.write(`: keepalive\n\n`);
+        }, 15000);
+
+        const statusPoll = setInterval(async () => {
+          try {
+            const updatedSession = await prisma.researchSession.findUnique({
+              where: { id },
+            });
+
+            if (updatedSession && updatedSession.status !== session.status) {
+              res.write(`data: ${JSON.stringify({
+                type: 'status',
+                timestamp: new Date().toISOString(),
+                data: {
+                  message: `Research status: ${updatedSession.status}`,
+                  status: updatedSession.status,
+                }
+              })}\n\n`);
+
+              if (updatedSession.status === 'completed' || updatedSession.status === 'failed') {
+                clearInterval(keepAlive);
+                clearInterval(statusPoll);
+                res.end();
+              }
+            }
+          } catch (err) {
+            console.error('[API] Error polling status:', err);
+          }
+        }, 3000);
+
+        req.on('close', () => {
+          console.log(`[API] Client disconnected from stream: ${id}`);
+          clearInterval(keepAlive);
+          clearInterval(statusPoll);
+        });
+      }
     }
   } catch (error) {
     next(error);
@@ -245,13 +300,18 @@ router.post('/:id/cancel', async (req: Request, res: Response, next: NextFunctio
 
     console.log(`[API] Cancelling research session: ${id}`);
 
-    // Cancel via AgentService
-    await agentService.cancelResearch(String(id));
+    // Cancel via WorkflowManager (which will cancel AgentService internally)
+    const cancelled = workflowManager.cancelWorkflow(id);
+
+    if (!cancelled) {
+      // Fallback to direct AgentService cancellation
+      await agentService.cancelResearch(id);
+    }
 
     res.json({
       success: true,
       sessionId: id,
-      message: 'Research session cancelled',
+      message: 'Research session cancellation requested',
     });
   } catch (error) {
     next(error);

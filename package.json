@@ -15,7 +15,9 @@
   },
   "devDependencies": {
     "@prisma/client": "6.1.0",
+    "@types/eventsource": "^3.0.0",
     "eslint": "^9.17.0",
+    "eventsource": "^4.1.0",
     "prettier": "^3.4.2",
     "prisma": "6.1.0",
     "turbo": "^2.3.3",
