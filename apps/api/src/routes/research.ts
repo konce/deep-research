@@ -76,7 +76,7 @@ router.post('/start', async (req: Request, res: Response, next: NextFunction) =>
 // GET /api/research/:id/status - Get research session status
 router.get('/:id/status', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     const session = await prisma.researchSession.findUnique({
       where: { id },
@@ -111,7 +111,7 @@ router.get('/:id/status', async (req: Request, res: Response, next: NextFunction
 // GET /api/research/:id/stream - SSE endpoint for research progress
 router.get('/:id/stream', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     // Verify session exists
     const session = await prisma.researchSession.findUnique({
@@ -228,7 +228,7 @@ router.get('/:id/stream', async (req: Request, res: Response, next: NextFunction
 // POST /api/research/:id/cancel - Cancel a research session
 router.post('/:id/cancel', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { id } = req.params;
+    const id = String(req.params.id);
 
     // Verify session exists
     const session = await prisma.researchSession.findUnique({

@@ -35,7 +35,7 @@ importers:
     dependencies:
       '@anthropic-ai/claude-agent-sdk':
         specifier: ^0.2.11
-        version: 0.2.11(zod@3.25.76)
+        version: 0.2.11(zod@4.3.5)
       '@deep-research/shared-types':
         specifier: workspace:*
         version: link:../../packages/shared-types
@@ -60,9 +60,12 @@ importers:
       pdf-parse:
         specifier: ^1.1.1
         version: 1.1.4
+      tavily:
+        specifier: ^1.0.2
+        version: 1.0.2
       zod:
-        specifier: ^3.24.1
-        version: 3.25.76
+        specifier: ^4.3.5
+        version: 4.3.5
     devDependencies:
       '@types/cors':
         specifier: ^2.8.17
@@ -151,13 +154,13 @@ packages:
     engines: {node: '>=10'}
     dev: true
 
-  /@anthropic-ai/claude-agent-sdk@0.2.11(zod@3.25.76):
+  /@anthropic-ai/claude-agent-sdk@0.2.11(zod@4.3.5):
     resolution: {integrity: sha512-50q4vfh57HYTUrwukULp3gvSaOZfRF5zukxhWvW6mmUHuD8+Xwhqn59sZhoDz9ZUw6Um+1lUCgWpJw5/TTMn5w==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
       zod: ^4.0.0
     dependencies:
-      zod: 3.25.76
+      zod: 4.3.5
     optionalDependencies:
       '@img/sharp-darwin-arm64': 0.33.5
       '@img/sharp-darwin-x64': 0.33.5
@@ -2711,6 +2714,11 @@ packages:
       json-buffer: 3.0.1
     dev: true
 
+  /ky@1.14.2:
+    resolution: {integrity: sha512-q3RBbsO5A5zrPhB6CaCS8ZUv+NWCXv6JJT4Em0i264G9W0fdPB8YRfnnEi7Dm7X7omAkBIPojzYJ2D1oHTHqug==}
+    engines: {node: '>=18'}
+    dev: false
+
   /levn@0.4.1:
     resolution: {integrity: sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ==}
     engines: {node: '>= 0.8.0'}
@@ -3913,6 +3921,13 @@ packages:
       - yaml
     dev: true
 
+  /tavily@1.0.2:
+    resolution: {integrity: sha512-Lu9qLmOXsQEwVch+BJvmmCTEUnd7ns1b6ZRkOHJX6ZEwK6Zc5pzQSM3ew4cgpqTxrSsDNyyREPyoZoJx83ERzQ==}
+    engines: {node: '>=18'}
+    dependencies:
+      ky: 1.14.2
+    dev: false
+
   /thenify-all@1.6.0:
     resolution: {integrity: sha512-RNxQH/qI8/t3thXJDwcstUO4zeqo64+Uy/+sNVRBx4Xn2OX+OZ9oP+iJnNFqplFra2ZUVeKCSa2oVWi3T4uVmA==}
     engines: {node: '>=0.8'}
@@ -4232,10 +4247,6 @@ packages:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
     engines: {node: '>=10'}
     dev: true
-
-  /zod@3.25.76:
-    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
-    dev: false
 
   /zod@4.3.5:
     resolution: {integrity: sha512-k7Nwx6vuWx1IJ9Bjuf4Zt1PEllcwe7cls3VNzm4CQ1/hgtFUK2bRNG3rvnpPUhFjmqJKAKtjV576KnUkHocg/g==}
