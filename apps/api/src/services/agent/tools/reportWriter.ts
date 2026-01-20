@@ -5,6 +5,8 @@ import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import type { ToolResult } from '../types';
 import type { ReportSection, Citation } from '@deep-research/shared-types';
+import { generateReport } from '../../report/MarkdownGenerator';
+import type {  ReportData, ReportGenerationOptions, ReportTemplateType } from '../../report/types';
 
 /**
  * Zod schema for report sections (recursive structure)
@@ -35,92 +37,8 @@ const citationSchema = z.object({
   source: z.string().describe('Source description (e.g., "Official Documentation", "Research Paper")'),
 });
 
-/**
- * Generate Markdown content from report structure
- */
-function generateMarkdown(
-  title: string,
-  sections: ReportSection[],
-  citations: Citation[]
-): string {
-  let markdown = '';
-
-  // Title (H1)
-  markdown += `# ${title}\n\n`;
-
-  // Generate date
-  markdown += `*Generated on ${new Date().toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })}*\n\n`;
-
-  markdown += `---\n\n`;
-
-  // Main sections
-  for (const section of sections) {
-    // Section heading (H2)
-    markdown += `## ${section.heading}\n\n`;
-
-    // Section content
-    markdown += `${section.content}\n\n`;
-
-    // Subsections (if any)
-    if (section.subsections && section.subsections.length > 0) {
-      for (const subsection of section.subsections) {
-        // Subsection heading (H3)
-        markdown += `### ${subsection.heading}\n\n`;
-
-        // Subsection content
-        markdown += `${subsection.content}\n\n`;
-      }
-    }
-  }
-
-  // References section
-  if (citations && citations.length > 0) {
-    markdown += `---\n\n`;
-    markdown += `## References\n\n`;
-
-    citations.forEach((citation, index) => {
-      const number = index + 1;
-
-      if (citation.url) {
-        // Citation with URL
-        markdown += `${number}. **${citation.title}**  \n   ${citation.source}  \n   [${citation.url}](${citation.url})\n\n`;
-      } else {
-        // Citation without URL
-        markdown += `${number}. **${citation.title}**  \n   ${citation.source}\n\n`;
-      }
-    });
-  }
-
-  return markdown;
-}
-
-/**
- * Calculate report statistics
- */
-function calculateStatistics(markdown: string, sections: ReportSection[], citations: Citation[]) {
-  const wordCount = markdown.split(/\s+/).length;
-  const charCount = markdown.length;
-  const sectionCount = sections.length;
-
-  let subsectionCount = 0;
-  sections.forEach((section) => {
-    if (section.subsections) {
-      subsectionCount += section.subsections.length;
-    }
-  });
-
-  return {
-    wordCount,
-    charCount,
-    sectionCount,
-    subsectionCount,
-    citationCount: citations.length,
-  };
-}
+// Note: Markdown generation now handled by MarkdownGenerator service
+// Old generateMarkdown and calculateStatistics functions removed
 
 /**
  * Report Writer MCP Tool
@@ -128,7 +46,7 @@ function calculateStatistics(markdown: string, sections: ReportSection[], citati
  */
 export const reportWriterTool = tool(
   'report_writer',
-  'Generate a comprehensive research report in Markdown format. Use this tool at the end of your research to compile all findings into a well-structured report with proper citations.',
+  'Generate a comprehensive research report in Markdown format. Use this tool at the end of your research to compile all findings into a well-structured report with proper citations. Supports multiple report templates (default, academic, technical, executive) and advanced formatting options.',
   {
     title: z
       .string()
@@ -146,10 +64,28 @@ export const reportWriterTool = tool(
       .describe(
         'List of all sources cited in the report. Each citation should have an id, title, and source. Include URLs for web sources.'
       ),
+    template: z
+      .enum(['default', 'academic', 'technical', 'executive'])
+      .optional()
+      .default('default')
+      .describe(
+        'Report template to use. Options: default (general), academic (formal research), technical (code-friendly), executive (summary-focused). Default is "default".'
+      ),
+    includeTOC: z
+      .boolean()
+      .optional()
+      .default(true)
+      .describe('Include table of contents at the beginning of the report.'),
+    includeStats: z
+      .boolean()
+      .optional()
+      .default(true)
+      .describe('Include document statistics in the footer (word count, reading time, etc).'),
   },
   async (args): Promise<ToolResult> => {
     try {
       console.log(`[reportWriter] Generating report: "${args.title}"`);
+      console.log(`[reportWriter] Template: ${args.template || 'default'}`);
       console.log(`[reportWriter] Sections: ${args.sections.length}, Citations: ${args.citations.length}`);
 
       // Validate that we have content
@@ -161,16 +97,35 @@ export const reportWriterTool = tool(
         throw new Error('Report must have at least one citation');
       }
 
-      // Generate Markdown
-      const markdown = generateMarkdown(args.title, args.sections, args.citations);
+      // Prepare report data
+      const reportData: ReportData = {
+        title: args.title,
+        sections: args.sections,
+        citations: args.citations,
+        metadata: {
+          title: args.title,
+          author: 'Deep Research Agent',
+          generatedAt: new Date().toISOString(),
+        },
+      };
 
-      // Calculate statistics
-      const stats = calculateStatistics(markdown, args.sections, args.citations);
+      // Prepare generation options
+      const generationOptions: ReportGenerationOptions = {
+        template: (args.template as ReportTemplateType) || 'default',
+        includeTOC: args.includeTOC !== undefined ? args.includeTOC : true,
+        includeStats: args.includeStats !== undefined ? args.includeStats : true,
+        citationFormat: args.template === 'academic' ? 'apa' : 'numbered',
+      };
+
+      // Generate report using new MarkdownGenerator
+      const result = generateReport(reportData, generationOptions);
 
       console.log(`[reportWriter] Report generated successfully:`);
-      console.log(`  - Word count: ${stats.wordCount}`);
-      console.log(`  - Sections: ${stats.sectionCount} (${stats.subsectionCount} subsections)`);
-      console.log(`  - Citations: ${stats.citationCount}`);
+      console.log(`  - Template: ${result.template}`);
+      console.log(`  - Word count: ${result.stats.wordCount}`);
+      console.log(`  - Sections: ${result.stats.sectionCount} (${result.stats.subsectionCount} subsections)`);
+      console.log(`  - Citations: ${result.stats.citationCount}`);
+      console.log(`  - Reading time: ~${result.stats.estimatedReadingTime} minutes`);
 
       // Return report in MCP format
       return {
@@ -179,11 +134,16 @@ export const reportWriterTool = tool(
             type: 'text',
             text: JSON.stringify(
               {
-                markdown,
+                markdown: result.markdown,
                 metadata: {
                   title: args.title,
-                  ...stats,
-                  generatedAt: new Date().toISOString(),
+                  template: result.template,
+                  wordCount: result.stats.wordCount,
+                  sectionCount: result.stats.sectionCount,
+                  subsectionCount: result.stats.subsectionCount,
+                  citationCount: result.stats.citationCount,
+                  estimatedReadingTime: result.stats.estimatedReadingTime,
+                  generatedAt: result.metadata.generatedAt,
                 },
               },
               null,
