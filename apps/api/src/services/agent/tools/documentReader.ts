@@ -5,6 +5,7 @@ import { tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { PrismaClient } from '@prisma/client';
 import type { ToolResult } from '../types';
+import { getDocumentProcessor, type DocumentChunk } from '../../document/TextExtractor';
 
 // Lazy-initialize Prisma client to avoid initialization issues
 let prisma: PrismaClient | null = null;
@@ -22,7 +23,7 @@ function getPrismaClient(): PrismaClient {
  */
 export const documentReaderTool = tool(
   'document_reader',
-  'Read the content of previously uploaded documents. Supports PDF, DOCX, CSV, and plain text files. Use this to extract information from documents provided by the user.',
+  'Read the content of previously uploaded documents. Supports PDF, DOCX, CSV, and plain text files. Use this to extract information from documents provided by the user. For long documents, can chunk the content into manageable pieces.',
   {
     documentId: z
       .string()
@@ -33,6 +34,20 @@ export const documentReaderTool = tool(
       .default(false)
       .describe(
         'If true, returns only a summary/preview of the document (first 2000 characters). If false, returns the full text.'
+      ),
+    useChunking: z
+      .boolean()
+      .default(false)
+      .describe(
+        'If true and the document is long (>4000 characters), splits it into chunks for easier processing.'
+      ),
+    chunkIndex: z
+      .number()
+      .int()
+      .min(0)
+      .optional()
+      .describe(
+        'If useChunking is true, specify which chunk to retrieve (0-indexed). If not specified, returns information about all chunks.'
       ),
   },
   async (args): Promise<ToolResult> => {
@@ -45,12 +60,15 @@ export const documentReaderTool = tool(
         where: { id: args.documentId },
         select: {
           id: true,
-          originalName: true,
+          originalFilename: true,
           filename: true,
           mimeType: true,
-          size: true,
+          fileSize: true,
           extractedText: true,
-          createdAt: true,
+          wordCount: true,
+          charCount: true,
+          pageCount: true,
+          uploadedAt: true,
         },
       });
 
@@ -82,7 +100,7 @@ export const documentReaderTool = tool(
             {
               type: 'text',
               text: JSON.stringify({
-                error: `Document "${document.originalName}" has no extracted text.`,
+                error: `Document "${document.originalFilename}" has no extracted text.`,
                 documentId: args.documentId,
                 mimeType: document.mimeType,
                 suggestion: 'The text extraction may have failed during upload, or the document type may not be supported.',
@@ -93,9 +111,103 @@ export const documentReaderTool = tool(
         };
       }
 
-      // Extract content (full or summary)
-      let content = document.extractedText;
-      const fullLength = content.length;
+      const fullText = document.extractedText;
+      const fullLength = fullText.length;
+
+      // Handle chunking
+      if (args.useChunking) {
+        const processor = getDocumentProcessor();
+        const extractor = processor['extractors'][0]; // Get any extractor for chunking
+        const chunks = extractor.chunkText(fullText, { maxChunkSize: 4000, overlapSize: 200 });
+
+        console.log(`[documentReader] Document chunked into ${chunks.length} pieces`);
+
+        // If chunkIndex is specified, return that specific chunk
+        if (args.chunkIndex !== undefined) {
+          if (args.chunkIndex >= chunks.length) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify({
+                    error: `Chunk index ${args.chunkIndex} is out of range. Document has ${chunks.length} chunks (0-${chunks.length - 1}).`,
+                    documentId: args.documentId,
+                    totalChunks: chunks.length,
+                  }),
+                },
+              ],
+              isError: true,
+            };
+          }
+
+          const chunk = chunks[args.chunkIndex];
+          console.log(`[documentReader] Returning chunk ${args.chunkIndex} of ${chunks.length}`);
+
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify(
+                  {
+                    documentId: document.id,
+                    filename: document.originalFilename,
+                    mimeType: document.mimeType,
+                    chunk: {
+                      index: chunk.chunkIndex,
+                      totalChunks: chunk.totalChunks,
+                      text: chunk.text,
+                      wordCount: chunk.wordCount,
+                      charCount: chunk.charCount,
+                    },
+                    fullDocumentMetadata: {
+                      totalLength: fullLength,
+                      totalWords: document.wordCount,
+                      totalPages: document.pageCount,
+                      uploadedAt: document.uploadedAt.toISOString(),
+                    },
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
+
+        // Return chunk overview
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  documentId: document.id,
+                  filename: document.originalFilename,
+                  mimeType: document.mimeType,
+                  chunksAvailable: chunks.length,
+                  chunks: chunks.map((chunk) => ({
+                    index: chunk.chunkIndex,
+                    wordCount: chunk.wordCount,
+                    charCount: chunk.charCount,
+                  })),
+                  instruction: `Document is split into ${chunks.length} chunks. Use chunkIndex parameter (0-${chunks.length - 1}) to retrieve a specific chunk.`,
+                  fullDocumentMetadata: {
+                    totalLength: fullLength,
+                    totalWords: document.wordCount,
+                    totalPages: document.pageCount,
+                    uploadedAt: document.uploadedAt.toISOString(),
+                  },
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      // Handle summary extraction
+      let content = fullText;
       let isTruncated = false;
 
       if (args.extractSummary && content.length > 2000) {
@@ -103,7 +215,7 @@ export const documentReaderTool = tool(
         isTruncated = true;
       }
 
-      console.log(`[documentReader] Successfully read document: ${document.originalName} (${fullLength} chars, ${isTruncated ? 'truncated' : 'full'})`);
+      console.log(`[documentReader] Successfully read document: ${document.originalFilename} (${fullLength} chars, ${isTruncated ? 'truncated' : 'full'})`);
 
       // Return document content in MCP format
       return {
@@ -113,15 +225,17 @@ export const documentReaderTool = tool(
             text: JSON.stringify(
               {
                 documentId: document.id,
-                filename: document.originalName,
+                filename: document.originalFilename,
                 mimeType: document.mimeType,
-                size: document.size,
+                fileSize: document.fileSize,
                 content,
                 metadata: {
                   fullLength,
                   isTruncated,
                   truncatedLength: isTruncated ? 2000 : fullLength,
-                  uploadedAt: document.createdAt.toISOString(),
+                  wordCount: document.wordCount,
+                  pageCount: document.pageCount,
+                  uploadedAt: document.uploadedAt.toISOString(),
                 },
               },
               null,
